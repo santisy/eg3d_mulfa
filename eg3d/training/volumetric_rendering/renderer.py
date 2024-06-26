@@ -19,6 +19,7 @@ import torch.nn as nn
 
 from training.volumetric_rendering.ray_marcher import MipRayMarcher2
 from training.volumetric_rendering import math_utils
+from training.volumetric_rendering.mulfagrid import mulfagrid_fn
 
 def generate_planes():
     """
@@ -52,7 +53,7 @@ def project_onto_planes(planes, coordinates):
     projections = torch.bmm(coordinates, inv_planes)
     return projections[..., :2]
 
-def sample_from_planes(plane_axes, plane_features, coordinates, mode='bilinear', padding_mode='zeros', box_warp=None):
+def sample_from_planes(plane_axes, plane_features, coordinates, filters_dict, mode='bilinear', padding_mode='zeros', box_warp=None):
     assert padding_mode == 'zeros'
     N, n_planes, C, H, W = plane_features.shape
     _, M, _ = coordinates.shape
@@ -61,7 +62,10 @@ def sample_from_planes(plane_axes, plane_features, coordinates, mode='bilinear',
     coordinates = (2/box_warp) * coordinates # TODO: add specific box bounds
 
     projected_coordinates = project_onto_planes(plane_axes, coordinates).unsqueeze(1)
-    output_features = torch.nn.functional.grid_sample(plane_features, projected_coordinates.float(), mode=mode, padding_mode=padding_mode, align_corners=False).permute(0, 3, 2, 1).reshape(N, n_planes, M, C)
+    #output_features = torch.nn.functional.grid_sample(plane_features, projected_coordinates.float(), mode=mode, padding_mode=padding_mode, align_corners=False).permute(0, 3, 2, 1).reshape(N, n_planes, M, C)
+    output_features = mulfagrid_fn(plane_features, projected_coordinates,
+                                   filters_dict["w_list"], filters_dict["phi_list"],
+                                   filters_dict["W_list"], filters_dict["b_list"]).permute(0, 2, 1).reshape(N, n_planes, M, C)
     return output_features
 
 def sample_from_3dgrid(grid, coordinates):
@@ -85,7 +89,7 @@ class ImportanceRenderer(torch.nn.Module):
         self.ray_marcher = MipRayMarcher2()
         self.plane_axes = generate_planes()
 
-    def forward(self, planes, decoder, ray_origins, ray_directions, rendering_options):
+    def forward(self, planes, filters_dict, decoder, ray_origins, ray_directions, rendering_options):
         self.plane_axes = self.plane_axes.to(ray_origins.device)
 
         if rendering_options['ray_start'] == rendering_options['ray_end'] == 'auto':
@@ -106,7 +110,7 @@ class ImportanceRenderer(torch.nn.Module):
         sample_directions = ray_directions.unsqueeze(-2).expand(-1, -1, samples_per_ray, -1).reshape(batch_size, -1, 3)
 
 
-        out = self.run_model(planes, decoder, sample_coordinates, sample_directions, rendering_options)
+        out = self.run_model(planes, filters_dict, decoder, sample_coordinates, sample_directions, rendering_options)
         colors_coarse = out['rgb']
         densities_coarse = out['sigma']
         colors_coarse = colors_coarse.reshape(batch_size, num_rays, samples_per_ray, colors_coarse.shape[-1])
@@ -122,7 +126,7 @@ class ImportanceRenderer(torch.nn.Module):
             sample_directions = ray_directions.unsqueeze(-2).expand(-1, -1, N_importance, -1).reshape(batch_size, -1, 3)
             sample_coordinates = (ray_origins.unsqueeze(-2) + depths_fine * ray_directions.unsqueeze(-2)).reshape(batch_size, -1, 3)
 
-            out = self.run_model(planes, decoder, sample_coordinates, sample_directions, rendering_options)
+            out = self.run_model(planes, filters_dict, decoder, sample_coordinates, sample_directions, rendering_options)
             colors_fine = out['rgb']
             densities_fine = out['sigma']
             colors_fine = colors_fine.reshape(batch_size, num_rays, N_importance, colors_fine.shape[-1])
@@ -139,8 +143,8 @@ class ImportanceRenderer(torch.nn.Module):
 
         return rgb_final, depth_final, weights.sum(2)
 
-    def run_model(self, planes, decoder, sample_coordinates, sample_directions, options):
-        sampled_features = sample_from_planes(self.plane_axes, planes, sample_coordinates, padding_mode='zeros', box_warp=options['box_warp'])
+    def run_model(self, planes, filters_dict, decoder, sample_coordinates, sample_directions, options):
+        sampled_features = sample_from_planes(self.plane_axes, planes, sample_coordinates, filters_dict, padding_mode='zeros', box_warp=options['box_warp'])
 
         out = decoder(sampled_features, sample_directions)
         if options.get('density_noise', 0) > 0:

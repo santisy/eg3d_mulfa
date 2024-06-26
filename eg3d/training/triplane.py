@@ -15,6 +15,8 @@ from training.volumetric_rendering.renderer import ImportanceRenderer
 from training.volumetric_rendering.ray_sampler import RaySampler
 import dnnlib
 
+import torch.nn as nn
+
 @persistence.persistent_class
 class TriPlaneGenerator(torch.nn.Module):
     def __init__(self,
@@ -42,6 +44,9 @@ class TriPlaneGenerator(torch.nn.Module):
         self.decoder = OSGDecoder(32, {'decoder_lr_mul': rendering_kwargs.get('decoder_lr_mul', 1), 'decoder_output_dim': 32})
         self.neural_rendering_resolution = 64
         self.rendering_kwargs = rendering_kwargs
+
+        # Newly added
+        self.filter_generator = nn.Identity()
     
         self._last_planes = None
     
