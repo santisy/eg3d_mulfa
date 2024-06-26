@@ -38,20 +38,20 @@ def mulfagrid_fn(plane_features, projected_coordinates,
     yf = torch.clamp((coords[:, :, 1] * (W -1)), 0, W - 1)
     x = xf.floor().long()
     y = yf.floor().long()
-    x0 = torch.clamp(x, 0, H-2)
-    x1 = torch.clamp(x + 1, 0, H-1)
-    y0 = torch.clamp(y, 0, W-2)
-    y1 = torch.clamp(y + 1, 0, W-1)
+    x0 = torch.clamp(x, 0, H - 2)
+    x1 = torch.clamp(x + 1, 0, H - 1)
+    y0 = torch.clamp(y, 0, W - 2)
+    y1 = torch.clamp(y + 1, 0, W - 1)
 
     # Get the features
     batch_indices = torch.arange(N, device=plane_features.device).view(N, 1).expand(N, M)
     # Coords
     coordf = torch.stack([xf, yf], dim=-1)
     # Indices, (N, M, 2)
-    top_left_indices = (x0 * H + y0).unsqueeze(dim=-1)
-    top_right_indices = (x0 * H + y1).unsqueeze(dim=-1)
-    bottom_left_indices = (x1 * H + y0).unsqueeze(dim=-1)
-    bottom_right_indices = (x1 * H + y1).unsqueeze(dim=-1)
+    top_left_indices = (x0 * W + y0).unsqueeze(dim=-1)
+    top_right_indices = (x0 * W + y1).unsqueeze(dim=-1)
+    bottom_left_indices = (x1 * W + y0).unsqueeze(dim=-1)
+    bottom_right_indices = (x1 * W + y1).unsqueeze(dim=-1)
     # Gather features, (N, C, M) 
     top_left_feature = plane_features[batch_indices, :, x0, y0].permute(0, 2, 1)
     top_right_feature = plane_features[batch_indices, :, x0, y1].permute(0, 2, 1)
@@ -83,7 +83,7 @@ def mulfagrid_fn(plane_features, projected_coordinates,
 if __name__ == "__main__":
     # Example input tensors
     N, C, H, W = 4, 3, 5, 5
-    M = 10
+    M = 10 # Number of sampled points
     plane_features = torch.randn(N, C, H, W)
     projected_coordinates = torch.rand(N, M, 2)  # coordinates in range [0, 1]
 
