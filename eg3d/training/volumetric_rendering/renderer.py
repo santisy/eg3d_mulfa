@@ -61,7 +61,7 @@ def sample_from_planes(plane_axes, plane_features, coordinates, filters_dict, mo
 
     coordinates = (2/box_warp) * coordinates # TODO: add specific box bounds
 
-    projected_coordinates = project_onto_planes(plane_axes, coordinates).unsqueeze(1)
+    projected_coordinates = project_onto_planes(plane_axes, coordinates)
     #output_features = torch.nn.functional.grid_sample(plane_features, projected_coordinates.float(), mode=mode, padding_mode=padding_mode, align_corners=False).permute(0, 3, 2, 1).reshape(N, n_planes, M, C)
     output_features = mulfagrid_fn(plane_features, projected_coordinates,
                                    filters_dict["w_list"], filters_dict["phi_list"],

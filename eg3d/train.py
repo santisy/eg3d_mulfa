@@ -257,8 +257,8 @@ def main(**kwargs):
         raise click.ClickException('--batch must be a multiple of --gpus')
     if c.batch_size % (c.num_gpus * c.batch_gpu) != 0:
         raise click.ClickException('--batch must be a multiple of --gpus times --batch-gpu')
-    if c.batch_gpu < c.D_kwargs.epilogue_kwargs.mbstd_group_size:
-        raise click.ClickException('--batch-gpu cannot be smaller than --mbstd')
+    #if c.batch_gpu < c.D_kwargs.epilogue_kwargs.mbstd_group_size:
+    #    raise click.ClickException('--batch-gpu cannot be smaller than --mbstd')
     if any(not metric_main.is_valid_metric(metric) for metric in c.metrics):
         raise click.ClickException('\n'.join(['--metrics can only contain the following values:'] + metric_main.list_valid_metrics()))
 
