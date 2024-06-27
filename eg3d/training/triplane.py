@@ -23,6 +23,7 @@ class FilterGenerator(nn.Module):
                  nm:int = 4,    # Number of fitlers
                  df:int = 8,    # Length of fourier positional encoding
                  ):
+        super().__init__()
         # The variable notation is the same as https://arxiv.org/abs/2403.20002
         # Output dim
         self.nm = nm
