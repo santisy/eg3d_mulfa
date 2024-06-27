@@ -52,6 +52,7 @@ def mulfagrid_fn(plane_features, projected_coordinates,
     """
     # Get the indices
     N, _, H, W = plane_features.shape
+    M = projected_coordinates.size(1)
     coords = (projected_coordinates + 1.0) / 2.0
     xf = torch.clamp((coords[:, :, 0] * (H -1)), 0, H - 1)
     yf = torch.clamp((coords[:, :, 1] * (W -1)), 0, W - 1)
