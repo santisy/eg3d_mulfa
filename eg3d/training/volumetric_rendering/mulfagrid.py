@@ -12,6 +12,17 @@ def fourier_features(coords, df=8):
             f_feature_list.append(torch.cos(2 ** (i // 2) * math.pi * coords))
     return torch.cat(f_feature_list, dim=-1)
 
+def _triplane_batch_linear(z, w, b):
+    # z, (N*3, M, fl)
+    # w, (N, fl, fl)
+    # b, (N, 1)
+    N, M, L = z.shape
+    L_ = w.size(1)
+    z = z.reshape(N//3, 3, M, L)
+    z = torch.einsum("npml,nkl->npmk", z, w)
+    z = z + b.unsqueeze(dim=1).unsqueeze(dim=1)
+    return z.reshape(N, M, L_)
+
 def mulfagrid_kernel_fn(coords, # (N, M, 2)
                         indices, # (N, M, 1)
                         w_list,
@@ -22,8 +33,9 @@ def mulfagrid_kernel_fn(coords, # (N, M, 2)
     # Note W and b is one length longer than w and phi
     z = fourier_features(coords) # (N, M, 2 * 8)
     for w, phi, W, b in zip(w_list, phi_list, W_list, b_list):
-        z = F.linear(z, W, b) * torch.sin(F.linear(indices.float(), w, phi))
-    z = F.linear(z, W_list[-1], b_list[-1])
+        z = (_triplane_batch_linear(z, W, b) * 
+             torch.sin(_triplane_batch_linear(indices.float(), w, phi)))
+    z = _triplane_batch_linear(z, W_list[-1], b_list[-1])
     return z
 
 def _triplane_indices(indices, plane_size):
@@ -100,10 +112,10 @@ if __name__ == "__main__":
     W_list = []
     b_list = []
     for _ in range(n):
-        w_list.append(torch.randn(16, 1))
-        phi_list.append(torch.randn(1))
-        W_list.append(torch.randn(16, 16))
-        b_list.append(torch.randn(1))
-    W_list.append(torch.randn(1, 16))
-    b_list.append(torch.randn(1))
+        w_list.append(torch.randn(2, 16, 1))
+        phi_list.append(torch.randn(2, 1))
+        W_list.append(torch.randn(2, 16, 16))
+        b_list.append(torch.randn(2, 1))
+    W_list.append(torch.randn(2, 1, 16))
+    b_list.append(torch.randn(2, 1))
     mulfagrid_fn(plane_features, projected_coordinates, w_list, phi_list, W_list, b_list)

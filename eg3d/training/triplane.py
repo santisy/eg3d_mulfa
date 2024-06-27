@@ -41,6 +41,7 @@ class FilterGenerator(nn.Module):
         )
 
     def forward(self, z):
+        N = z.size(0)
         filter_total = self.filter_mapping(z)
 
         w_list = []
@@ -50,9 +51,9 @@ class FilterGenerator(nn.Module):
 
         for i in range(self.nm):
             s = self.stride * i
-            W_list.append(filter_total[:, s:s + self.fl ** 2])
+            W_list.append(filter_total[:, s:s + self.fl ** 2].reshape(N, self.fl, self.fl))
             s += self.fl ** 2
-            w_list.append(filter_total[:, s:s + self.fl])
+            w_list.append(filter_total[:, s:s + self.fl].reshape(N, self.fl, 1))
             s += self.fl
             phi_list.append(filter_total[:, s:s + 1])
             s += 1
@@ -60,7 +61,7 @@ class FilterGenerator(nn.Module):
             s += 1
 
         s = self.stride * self.nm 
-        W_list.append(filter_total[:, s:s + self.fl])
+        W_list.append(filter_total[:, s:s + self.fl].reshape(N, 1, self.fl))
         s += self.fl
         b_list.append(filter_total[:, s:s + 1])
 
