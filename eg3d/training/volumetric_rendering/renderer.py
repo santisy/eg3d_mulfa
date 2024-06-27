@@ -16,6 +16,7 @@ ray, and computes pixel colors using the volume rendering equation.
 import math
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 
 from training.volumetric_rendering.ray_marcher import MipRayMarcher2
 from training.volumetric_rendering import math_utils
@@ -63,9 +64,10 @@ def sample_from_planes(plane_axes, plane_features, coordinates, filters_dict, mo
 
     projected_coordinates = project_onto_planes(plane_axes, coordinates)
     #output_features = torch.nn.functional.grid_sample(plane_features, projected_coordinates.float(), mode=mode, padding_mode=padding_mode, align_corners=False).permute(0, 3, 2, 1).reshape(N, n_planes, M, C)
-    output_features = mulfagrid_fn(plane_features, projected_coordinates,
-                                   filters_dict["w_list"], filters_dict["phi_list"],
-                                   filters_dict["W_list"], filters_dict["b_list"]).permute(0, 2, 1).reshape(N, n_planes, M, C)
+    with autocast():
+        output_features = mulfagrid_fn(plane_features, projected_coordinates,
+                                    filters_dict["w_list"], filters_dict["phi_list"],
+                                    filters_dict["W_list"], filters_dict["b_list"]).permute(0, 2, 1).reshape(N, n_planes, M, C)
     return output_features
 
 def sample_from_3dgrid(grid, coordinates):
