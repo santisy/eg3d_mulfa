@@ -26,6 +26,13 @@ def mulfagrid_kernel_fn(coords, # (N, M, 2)
     z = F.linear(z, W_list[-1], b_list[-1])
     return z
 
+def _triplane_indices(indices, plane_size):
+    N, M, _ = indices.shape
+    indices = indices.reshape(N // 3, 3, M, 1) 
+    indices[:, 1, :, :] = indices[:, 1, :, :] + plane_size
+    indices[:, 2, :, :] = indices[:, 2, :, :] + plane_size * 2
+    return indices.reshape(N, M, 1).detach()
+
 def mulfagrid_fn(plane_features, projected_coordinates,
                  w_list, phi_list, W_list, b_list):
     """ The filters notations are the same with the paper https://arxiv.org/abs/2403.20002
@@ -48,10 +55,10 @@ def mulfagrid_fn(plane_features, projected_coordinates,
     # Coords
     coordf = torch.stack([xf, yf], dim=-1)
     # Indices, (N, M, 2)
-    top_left_indices = (x0 * W + y0).unsqueeze(dim=-1)
-    top_right_indices = (x0 * W + y1).unsqueeze(dim=-1)
-    bottom_left_indices = (x1 * W + y0).unsqueeze(dim=-1)
-    bottom_right_indices = (x1 * W + y1).unsqueeze(dim=-1)
+    top_left_indices = _triplane_indices((x0 * W + y0).unsqueeze(dim=-1), H * W)
+    top_right_indices = _triplane_indices((x0 * W + y1).unsqueeze(dim=-1), H * W)
+    bottom_left_indices = _triplane_indices((x1 * W + y0).unsqueeze(dim=-1), H * W)
+    bottom_right_indices = _triplane_indices((x1 * W + y1).unsqueeze(dim=-1), H * W)
     # Gather features, (N, C, M) 
     top_left_feature = plane_features[batch_indices, :, x0, y0].permute(0, 2, 1)
     top_right_feature = plane_features[batch_indices, :, x0, y1].permute(0, 2, 1)
@@ -82,7 +89,7 @@ def mulfagrid_fn(plane_features, projected_coordinates,
 
 if __name__ == "__main__":
     # Example input tensors
-    N, C, H, W = 4, 3, 5, 5
+    N, C, H, W = 6, 3, 5, 5
     M = 10 # Number of sampled points
     plane_features = torch.randn(N, C, H, W)
     projected_coordinates = torch.rand(N, M, 2)  # coordinates in range [0, 1]
