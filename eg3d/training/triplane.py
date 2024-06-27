@@ -17,6 +17,58 @@ import dnnlib
 
 import torch.nn as nn
 
+class FilterGenerator(nn.Module):
+    def __init__(self,
+                 z_dim,         # Input latent (Z) dimensionality.
+                 nm:int = 4,    # Number of fitlers
+                 df:int = 8,    # Length of fourier positional encoding
+                 ):
+        # The variable notation is the same as https://arxiv.org/abs/2403.20002
+        # Output dim
+        self.nm = nm
+        self.fl = fl = 2 * df
+        self.stride = fl ** 2 + fl + 1 + 1
+        out_f =  self.stride * nm + fl + 1
+
+        self.filter_mapping = nn.Sequential(
+            nn.Linear(z_dim, z_dim * 2),
+            nn.LayerNorm(z_dim * 2),
+            nn.GELU(),
+            nn.Linear(z_dim * 2, z_dim * 4),
+            nn.LayerNorm(z_dim * 4),
+            nn.GELU(),
+            nn.Linear(z_dim * 4, out_f)
+        )
+
+    def forward(self, z):
+        filter_total = self.filter_mapping(z)
+
+        w_list = []
+        phi_list = []
+        W_list = []
+        b_list = []
+
+        for i in range(self.nm):
+            s = self.stride * i
+            W_list.append(filter_total[:, s:s + self.fl ** 2])
+            s += self.fl ** 2
+            w_list.append(filter_total[:, s:s + self.fl])
+            s += self.fl
+            phi_list.append(filter_total[:, s:s + 1])
+            s += 1
+            b_list.append(filter_total[:, s:s + 1])
+            s += 1
+
+        s = self.stride * self.nm 
+        W_list.append(filter_total[:, s:s + self.fl])
+        s += self.fl
+        b_list.append(filter_total[:, s:s + 1])
+
+        filter_dict = {"w_list":w_list, "phi_list":phi_list,
+                       "W_list":W_list, "b_list":b_list}
+
+        return filter_dict
+
 @persistence.persistent_class
 class TriPlaneGenerator(torch.nn.Module):
     def __init__(self,
@@ -45,8 +97,8 @@ class TriPlaneGenerator(torch.nn.Module):
         self.neural_rendering_resolution = 64
         self.rendering_kwargs = rendering_kwargs
 
-        # Newly added
-        self.filter_generator = nn.Identity()
+        # Newly added filter Generator
+        self.filter_generator = FilterGenerator(z_dim)
     
         self._last_planes = None
     
@@ -55,7 +107,7 @@ class TriPlaneGenerator(torch.nn.Module):
                 c = torch.zeros_like(c)
         return self.backbone.mapping(z, c * self.rendering_kwargs.get('c_scale', 0), truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff, update_emas=update_emas)
 
-    def synthesis(self, ws, c, neural_rendering_resolution=None, update_emas=False, cache_backbone=False, use_cached_backbone=False, **synthesis_kwargs):
+    def synthesis(self, ws, c, filters_dict, neural_rendering_resolution=None, update_emas=False, cache_backbone=False, use_cached_backbone=False, **synthesis_kwargs):
         cam2world_matrix = c[:, :16].view(-1, 4, 4)
         intrinsics = c[:, 16:25].view(-1, 3, 3)
 
@@ -80,7 +132,7 @@ class TriPlaneGenerator(torch.nn.Module):
         planes = planes.view(len(planes), 3, 32, planes.shape[-2], planes.shape[-1])
 
         # Perform volume rendering
-        feature_samples, depth_samples, weights_samples = self.renderer(planes, self.decoder, ray_origins, ray_directions, self.rendering_kwargs) # channels last
+        feature_samples, depth_samples, weights_samples = self.renderer(planes, filters_dict, self.decoder, ray_origins, ray_directions, self.rendering_kwargs) # channels last
 
         # Reshape into 'raw' neural-rendered image
         H = W = self.neural_rendering_resolution
@@ -95,10 +147,11 @@ class TriPlaneGenerator(torch.nn.Module):
     
     def sample(self, coordinates, directions, z, c, truncation_psi=1, truncation_cutoff=None, update_emas=False, **synthesis_kwargs):
         # Compute RGB features, density for arbitrary 3D coordinates. Mostly used for extracting shapes. 
+        filters_dict = self.filter_generator(z)
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff, update_emas=update_emas)
         planes = self.backbone.synthesis(ws, update_emas=update_emas, **synthesis_kwargs)
         planes = planes.view(len(planes), 3, 32, planes.shape[-2], planes.shape[-1])
-        return self.renderer.run_model(planes, self.decoder, coordinates, directions, self.rendering_kwargs)
+        return self.renderer.run_model(planes, filters_dict, self.decoder, coordinates, directions, self.rendering_kwargs)
 
     def sample_mixed(self, coordinates, directions, ws, truncation_psi=1, truncation_cutoff=None, update_emas=False, **synthesis_kwargs):
         # Same as sample, but expects latent vectors 'ws' instead of Gaussian noise 'z'
@@ -109,7 +162,8 @@ class TriPlaneGenerator(torch.nn.Module):
     def forward(self, z, c, truncation_psi=1, truncation_cutoff=None, neural_rendering_resolution=None, update_emas=False, cache_backbone=False, use_cached_backbone=False, **synthesis_kwargs):
         # Render a batch of generated images.
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff, update_emas=update_emas)
-        return self.synthesis(ws, c, update_emas=update_emas, neural_rendering_resolution=neural_rendering_resolution, cache_backbone=cache_backbone, use_cached_backbone=use_cached_backbone, **synthesis_kwargs)
+        filters_dict = self.filter_generator(z)
+        return self.synthesis(ws, c, filters_dict, update_emas=update_emas, neural_rendering_resolution=neural_rendering_resolution, cache_backbone=cache_backbone, use_cached_backbone=use_cached_backbone, **synthesis_kwargs)
 
 
 from training.networks_stylegan2 import FullyConnectedLayer
